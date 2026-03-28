@@ -310,22 +310,21 @@ async def run(baslangic: datetime, bitis: datetime):
     ]
     chrome_exe = next((p for p in chrome_exe_paths if os.path.exists(p)), None)
 
-    log.info("=" * 60)
-    log.info("ONEMLI: Lutfen acik olan TUM Chrome pencerelerini kapatin!")
-    log.info("Sonra bu pencereye tiklayin ve Enter'a basin...")
-    log.info("=" * 60)
-    input()  # Kullanicinin Chrome'u kapatmasini bekle
+    # Scraper icin ozel profil klasoru (Chrome'un kendi klasoru degil)
+    scraper_profile = os.path.join(
+        os.environ.get("TEMP", "C:\\Temp"), "tnb_scraper_profile"
+    )
+    os.makedirs(scraper_profile, exist_ok=True)
+    log.info(f"Tarayici profil klasoru: {scraper_profile}")
 
     async with async_playwright() as pw:
-        # Gercek Chrome profiliyle ac — Cloudflare'i gecer
         launch_kwargs = dict(
-            user_data_dir=chrome_profile,
+            user_data_dir=scraper_profile,
             headless=False,
             args=[
                 "--start-maximized",
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
-                "--profile-directory=Default",
             ],
             locale="tr-TR",
         )
