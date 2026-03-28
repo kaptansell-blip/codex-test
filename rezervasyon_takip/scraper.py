@@ -57,11 +57,29 @@ async def _click(page, selectors: list[str]) -> bool:
 
 async def login(page):
     log.info("Giris sayfasina gidiliyor...")
-    # Cloudflare icin domcontentloaded kullan, networkidle degil
     await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
-    # Cloudflare dogrulama ekraninin gecmesi icin bekle (max 20 sn)
-    log.info("Cloudflare kontrolu bekleniyor (20 saniye)...")
-    await page.wait_for_timeout(20_000)
+
+    log.info("=" * 60)
+    log.info(">>> TARAYICI ACILDI!")
+    log.info(">>> Cloudflare kutucugu gorunuyorsa TIKLAYINIZ.")
+    log.info(">>> Giris formu gelene kadar bekliyorum (max 2 dakika)...")
+    log.info("=" * 60)
+
+    # Kullanici Cloudflare kutucugunu tiklayinca giris formu gelir
+    try:
+        await page.wait_for_selector(
+            "input[type='text'], input[type='password'], "
+            "input[name*='User'], input[name*='user'], "
+            "input[id*='User'], input[id*='user']",
+            timeout=120_000,  # 2 dakika bekle
+        )
+        log.info("Giris formu gorundu, devam ediliyor...")
+    except Exception:
+        await page.screenshot(path="screenshots/01_login.png")
+        raise RuntimeError(
+            "2 dakika icerisinde giris formuna ulasilamadi.\n"
+            "screenshots/01_login.png dosyasina bakin."
+        )
     await page.screenshot(path="screenshots/01_login.png")
 
     kullanici_ok = await _fill(page, [
