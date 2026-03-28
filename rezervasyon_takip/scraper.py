@@ -295,26 +295,47 @@ async def extract_katilimcilar(page, rezervasyon_no: str) -> list[dict]:
 async def run(baslangic: datetime, bitis: datetime):
     db.init_db()
 
+    # Kullanicinin gercek Chrome profilini bul (Cloudflare icin)
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    chrome_profile  = os.path.join(local_app_data, "Google", "Chrome", "User Data")
+    if not os.path.isdir(chrome_profile):
+        chrome_profile = os.path.join(os.path.expanduser("~"),
+                                      "AppData", "Local", "Google", "Chrome", "User Data")
+
+    # Chrome exe yolunu bul
+    chrome_exe_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.join(local_app_data, "Google", "Chrome", "Application", "chrome.exe"),
+    ]
+    chrome_exe = next((p for p in chrome_exe_paths if os.path.exists(p)), None)
+
+    log.info("=" * 60)
+    log.info("ONEMLI: Lutfen acik olan TUM Chrome pencerelerini kapatin!")
+    log.info("Sonra bu pencereye tiklayin ve Enter'a basin...")
+    log.info("=" * 60)
+    input()  # Kullanicinin Chrome'u kapatmasini bekle
+
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
-            headless=HEADLESS,
+        # Gercek Chrome profiliyle ac — Cloudflare'i gecer
+        launch_kwargs = dict(
+            user_data_dir=chrome_profile,
+            headless=False,
             args=[
                 "--start-maximized",
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
-                "--disable-dev-shm-usage",
+                "--profile-directory=Default",
             ],
-        )
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
             locale="tr-TR",
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
         )
-        # Playwright'i gercek tarayici gibi goster
+        if chrome_exe:
+            launch_kwargs["executable_path"] = chrome_exe
+            log.info(f"Chrome bulundu: {chrome_exe}")
+        else:
+            log.warning("Chrome bulunamadi, varsayilan Chromium kullaniliyor")
+
+        context = await pw.chromium.launch_persistent_context(**launch_kwargs)
         await context.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         )
@@ -498,7 +519,7 @@ async def run(baslangic: datetime, bitis: datetime):
             await page.screenshot(path="screenshots/kritik_hata.png")
             raise
         finally:
-            await browser.close()
+            await context.close()
 
 
 # ── Komut satırı girişi ───────────────────────────────────────────────────────
