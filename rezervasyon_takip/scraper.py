@@ -56,8 +56,12 @@ async def _click(page, selectors: list[str]) -> bool:
 # ── 1. GİRİŞ ─────────────────────────────────────────────────────────────────
 
 async def login(page):
-    log.info("Giriş sayfasına gidiliyor…")
-    await page.goto(LOGIN_URL, wait_until="networkidle", timeout=30_000)
+    log.info("Giris sayfasina gidiliyor...")
+    # Cloudflare icin domcontentloaded kullan, networkidle degil
+    await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
+    # Cloudflare dogrulama ekraninin gecmesi icin bekle (max 20 sn)
+    log.info("Cloudflare kontrolu bekleniyor (20 saniye)...")
+    await page.wait_for_timeout(20_000)
     await page.screenshot(path="screenshots/01_login.png")
 
     kullanici_ok = await _fill(page, [
@@ -276,11 +280,25 @@ async def run(baslangic: datetime, bitis: datetime):
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=HEADLESS,
-            args=["--start-maximized"],
+            args=[
+                "--start-maximized",
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
         )
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
             locale="tr-TR",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+        )
+        # Playwright'i gercek tarayici gibi goster
+        await context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         )
         page = await context.new_page()
 
