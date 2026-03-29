@@ -216,23 +216,33 @@ async def search_by_date(tab, baslangic: datetime, bitis: datetime):
     except Exception as e:
         log.warning(f"HTML kayit hatasi: {e}")
 
-    # Ilk satirin link listesi
+    # Tablodaki ilk KRV satirinin HTML'ini ve tum tiklanabilir elemanlari logla
     try:
-        row_links = await tab.evaluate("""
+        row_diag = await tab.evaluate("""
             (function() {
                 var rows = document.querySelectorAll('table tbody tr');
-                if (!rows.length) return 'satir yok';
-                var links = rows[0].querySelectorAll('a');
-                var r = [];
-                links.forEach(function(l) {
-                    r.push('cls=' + l.className + ' href=' + l.href + ' title=' + l.title);
-                });
-                return r.join(' || ');
+                var result = 'Toplam satir: ' + rows.length + '\\n';
+                // Ilk KRV iceren satirin HTML'ini al
+                for (var i = 0; i < rows.length; i++) {
+                    if (rows[i].innerText.indexOf('KRV') >= 0) {
+                        result += '--- SATIR ' + i + ' HTML (ilk 3000 char) ---\\n';
+                        result += rows[i].outerHTML.substring(0, 3000) + '\\n';
+                        // Bu satirdaki tum tiklanabilir elemanlari listele
+                        var clickables = rows[i].querySelectorAll('a, button, input[type=image], input[type=button], input[type=submit]');
+                        result += '--- TIKLANABILIR ELEMANLAR (' + clickables.length + ') ---\\n';
+                        for (var j = 0; j < clickables.length; j++) {
+                            var el = clickables[j];
+                            result += j + ': tag=' + el.tagName + ' id=' + el.id + ' class=' + el.className + ' type=' + (el.type||'') + ' title=' + (el.title||'') + ' href=' + (el.href||'') + ' onclick=' + (el.onclick?'VAR':'YOK') + '\\n';
+                        }
+                        break;
+                    }
+                }
+                return result;
             })()
         """)
-        log.info(f"Ilk satir linkleri: {str(row_links)}")
+        log.info(f"=== SATIR YAPISI ===\n{str(row_diag)}")
     except Exception as e:
-        log.warning(f"Ilk satir linkleri alinamadi: {e}")
+        log.warning(f"Satir yapisi alinamadi: {e}")
     log.info("Arama tamamlandi.")
 
 
@@ -389,53 +399,75 @@ async def run(baslangic: datetime, bitis: datetime):
                     for r in rows_fresh:
                         r_text = r.text or ""
                         if tur_kodu in r_text:
-                            # Once btn-warning (sari), sonra btn-info, sonra ilk link
+                            # ASP.NET sayfalarinda butonlar farkli olabilir
+                            # a, button, input[type=image], input[type=button] hepsini dene
                             for btn_sel in [
                                 "a.btn-warning",
                                 "a[class*='warning']",
+                                "input[type='image']",
                                 "a[title*='etay']",
                                 "a[title*='etail']",
+                                "a[id*='Detail']",
+                                "a[id*='detail']",
+                                "a[id*='lnk']",
+                                "input[id*='img']",
+                                "input[type='button']",
+                                "button",
                                 "a[href*='etail']",
                                 "a[href*='etay']",
+                                "a[href*='javascript']",
                             ]:
                                 try:
                                     b = await r.query_selector(btn_sel)
                                     if b:
                                         detail_link = b
+                                        log.info(f"  Buton bulundu: {btn_sel}")
                                         break
                                 except Exception:
                                     pass
 
-                            # Hala bulunamadiysa satirdaki tum linklere bak
+                            # Hala bulunamadiysa satirdaki tum tiklanabilir elemanlara bak
                             if not detail_link:
-                                links = await r.query_selector_all("a")
-                                if links:
-                                    # Sarı/turuncu buton genellikle 2. veya 3. link
-                                    for lnk in links:
-                                        attrs = lnk.attrs or {}
-                                        cls = attrs.get("class", "")
-                                        if "warning" in cls or "info" in cls:
-                                            detail_link = lnk
+                                clickables = await r.query_selector_all("a, button, input[type='image'], input[type='button']")
+                                if clickables:
+                                    log.info(f"  {len(clickables)} tiklanabilir eleman bulundu")
+                                    for ci, clk in enumerate(clickables):
+                                        attrs = clk.attrs or {}
+                                        log.info(f"    [{ci}] tag={clk.tag_name} id={attrs.get('id','')} class={attrs.get('class','')}")
+                                    # Ilk uygun olani sec (checkbox disinda)
+                                    for clk in clickables:
+                                        attrs = clk.attrs or {}
+                                        el_type = attrs.get("type", "")
+                                        if el_type != "checkbox":
+                                            detail_link = clk
                                             break
-                                    if not detail_link and len(links) >= 2:
-                                        detail_link = links[1]  # 2. butonu dene
 
                             break
 
                     if not detail_link:
                         log.warning(f"  Detay butonu bulunamadi: {tur_kodu}")
-                        await tab.save_screenshot(f"screenshots/no_btn_{tur_kodu[:10]}.png")
+                        # Sadece ilk tur icin screenshot al (cok fazla dosya olusmasin)
+                        if idx == 0:
+                            await tab.save_screenshot(f"screenshots/no_btn_{tur_kodu[:10]}.png")
                         continue
 
                     # Detay sayfasina git
-                    href = (detail_link.attrs or {}).get("href", "")
-                    if href:
+                    attrs = detail_link.attrs or {}
+                    href = attrs.get("href", "")
+                    el_tag = getattr(detail_link, 'tag_name', '') or ''
+
+                    if el_tag.lower() == 'input' or not href or href.startswith("javascript"):
+                        # input[type=image] veya javascript link - tikla
+                        await detail_link.click()
+                        await asyncio.sleep(3)
+                    elif href:
                         if not href.startswith("http"):
                             base = "https://panel.touchandbook.com"
                             href = base + "/" + href.lstrip("/")
                         await tab.get(href)
                     else:
                         await detail_link.click()
+                        await asyncio.sleep(3)
 
                     # Katilimcilari cek
                     katilimcilar = await extract_katilimcilar(tab, tur_kodu)
@@ -462,6 +494,11 @@ async def run(baslangic: datetime, bitis: datetime):
                         pass
                     await tab.get(liste_url)
                     await asyncio.sleep(2)
+
+            # Ilk calistirmada tani icin sadece 1 sayfa isle
+            if sayfa_no >= 1:
+                log.info("Tani modu: sadece 1 sayfa islendi, durduruluyor.")
+                break
 
             # Sonraki sayfa var mi?
             next_btn = None
