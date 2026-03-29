@@ -145,15 +145,18 @@ async def search_by_date(tab, baslangic: datetime, bitis: datetime):
     log.info(f"Tarih araligi: {bas_str} - {bit_str}")
     await asyncio.sleep(2)
 
-    # Tum inputlari logla — hangi input ID/name'inin tarih alani oldugunu anlayacagiz
-    input_log = await tab.evaluate("""
-        var r = [];
-        document.querySelectorAll('input').forEach(function(el, i) {
-            r.push(i+': id='+el.id+' name='+el.name+' type='+el.type+' val='+el.value);
-        });
-        return r.join('\\n');
-    """)
-    log.info("=== INPUT LISTESI ===\n" + input_log)
+    # Tum inputlari logla
+    try:
+        input_log = await tab.evaluate("""
+            var r = [];
+            document.querySelectorAll('input').forEach(function(el, i) {
+                r.push(i+': id='+el.id+' name='+el.name+' type='+el.type+' val='+el.value);
+            });
+            return r.join('\\n');
+        """)
+        log.info("=== INPUT LISTESI ===\n" + str(input_log))
+    except Exception as e:
+        log.warning(f"Input listesi alinamadi: {e}")
 
     # JavaScript ile tarih inputlarini doldur
     fill_result = await tab.evaluate(f"""
@@ -184,7 +187,7 @@ async def search_by_date(tab, baslangic: datetime, bitis: datetime):
             return 'BULUNAMADI (toplam input: ' + all.length + ')';
         }})()
     """)
-    log.info(f"Tarih doldurma sonucu: {fill_result}")
+    log.info(f"Tarih doldurma sonucu: {str(fill_result)}")
 
     # Ara butonuna bas
     ara_ok = False
@@ -221,7 +224,7 @@ async def search_by_date(tab, baslangic: datetime, bitis: datetime):
         });
         return r.join(' || ');
     """)
-    log.info(f"Ilk satir linkleri: {row_links}")
+    log.info(f"Ilk satir linkleri: {str(row_links)}")
     log.info("Arama tamamlandi.")
 
 
