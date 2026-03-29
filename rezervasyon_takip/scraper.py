@@ -148,7 +148,15 @@ async def login(tab):
 async def navigate_to_tur(tab):
     log.info("Tur listesi sayfasina gidiliyor...")
 
-    for ana, alt in [("Rezervasyonlar", "Tur"), ("Urun", "Tur"), ("Ürün", "Tur")]:
+    # Giris sonrasi b2b.touchandbook.com'a yonlendiyse panel'e don
+    if "b2b.touchandbook.com" in str(tab.url):
+        log.info("b2b'den panel.touchandbook.com'a geciliyor...")
+        await tab.get("https://panel.touchandbook.com/")
+        await asyncio.sleep(4)
+        log.info(f"Panel URL: {tab.url}")
+
+    # Menu uzerinden gitmeyi dene
+    for ana, alt in [("Rezervasyonlar", "Tur"), ("Ürün", "Tur"), ("Urun", "Tur")]:
         try:
             el = await tab.find(ana, timeout=4)
             if el:
@@ -158,26 +166,41 @@ async def navigate_to_tur(tab):
                 if el2:
                     await el2.click()
                     await asyncio.sleep(3)
-                    if "tur" in str(tab.url).lower():
+                    url_now = str(tab.url)
+                    if "tur" in url_now.lower() and "error" not in url_now.lower():
                         log.info(f"Tur sayfasina ulasildi: {tab.url}")
                         await tab.save_screenshot("screenshots/03_tur_list.png")
                         return
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"Menu denemesi basarisiz ({ana}>{alt}): {e}")
 
     # Direkt URL dene
-    base = "/".join(str(tab.url).split("/")[:3])
-    for path in ["/Tour/TourList.aspx", "/Tur/List.aspx", "/Rezervasyon/Tur.aspx"]:
+    base = "https://panel.touchandbook.com"
+    for path in [
+        "/Tur/TourList.aspx",
+        "/Rezervasyon/Tur.aspx",
+        "/Tour/TourList.aspx",
+        "/Tur/List.aspx",
+        "/Rezervasyon/TourList.aspx",
+    ]:
         try:
             await tab.get(base + path)
-            await asyncio.sleep(2)
-            if str(tab.url) != LOGIN_URL:
+            await asyncio.sleep(3)
+            url_now = str(tab.url)
+            if "error" not in url_now.lower() and url_now != LOGIN_URL:
                 log.info(f"Tur sayfasina ulasildi: {tab.url}")
+                await tab.save_screenshot("screenshots/03_tur_list.png")
                 return
-        except Exception:
-            pass
+            log.debug(f"URL hatali: {url_now}")
+        except Exception as e:
+            log.debug(f"Direkt URL basarisiz ({path}): {e}")
 
-    raise RuntimeError("Tur sayfasina ulasilamadi!")
+    await tab.save_screenshot("screenshots/03_tur_list_hata.png")
+    raise RuntimeError(
+        "Tur listesi sayfasina ulasilamadi!\n"
+        "screenshots/03_tur_list_hata.png dosyasina bakin.\n"
+        "Tarayicida hangi sayfadasiniz not edin."
+    )
 
 
 # ── 3. ARAMA ─────────────────────────────────────────────────────────────────
@@ -186,6 +209,13 @@ async def search(tab, baslangic: datetime, bitis: datetime):
     bas_str = baslangic.strftime("%d.%m.%Y")
     bit_str  = bitis.strftime("%d.%m.%Y")
     log.info(f"Arama: {bas_str} - {bit_str}")
+
+    # Sayfanin tamamen yuklenmesini bekle
+    await asyncio.sleep(2)
+
+    # Hata sayfasindaysak dur
+    if "error" in str(tab.url).lower():
+        raise RuntimeError(f"Hata sayfasina yonlendirildi: {tab.url}")
 
     date_inputs = await tab.select_all("input[type='text']")
     if len(date_inputs) >= 2:
