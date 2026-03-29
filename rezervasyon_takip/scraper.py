@@ -143,50 +143,48 @@ async def search_by_date(tab, baslangic: datetime, bitis: datetime):
     bas_str = baslangic.strftime("%d.%m.%Y")
     bit_str  = bitis.strftime("%d.%m.%Y")
     log.info(f"Tarih araligi: {bas_str} - {bit_str}")
-
     await asyncio.sleep(2)
 
-    # "Tarih Araligi" etiketinin yaninidaki iki date input'u bul
-    # Sayfada birden fazla input var; tarih araligina ozel olanlari bulmaya calis
-    date_inputs = await tab.select_all(
-        "input[id*='Date'], input[id*='date'], "
-        "input[id*='Tarih'], input[id*='tarih'], "
-        "input[placeholder*='gg'], input[placeholder*='GG']"
-    )
+    # Tum inputlari logla — hangi input ID/name'inin tarih alani oldugunu anlayacagiz
+    input_log = await tab.evaluate("""
+        var r = [];
+        document.querySelectorAll('input').forEach(function(el, i) {
+            r.push(i+': id='+el.id+' name='+el.name+' type='+el.type+' val='+el.value);
+        });
+        return r.join('\\n');
+    """)
+    log.info("=== INPUT LISTESI ===\n" + input_log)
 
-    if len(date_inputs) < 2:
-        # Fallback: sayfadaki tum text inputlari al
-        date_inputs = await tab.select_all("input[type='text']")
-
-    log.info(f"Bulunan date input sayisi: {len(date_inputs)}")
-
-    if len(date_inputs) >= 2:
-        # Onceki degerleri temizle ve yaz
-        try:
-            await date_inputs[0].mouse_click()
-            await asyncio.sleep(0.3)
-            await tab.key_down("ctrl")
-            await tab.send_keys("a")
-            await tab.key_up("ctrl")
-            await tab.send_keys(bas_str)
-        except Exception:
-            await date_inputs[0].send_keys(bas_str)
-
-        await asyncio.sleep(0.3)
-
-        try:
-            await date_inputs[1].mouse_click()
-            await asyncio.sleep(0.3)
-            await tab.key_down("ctrl")
-            await tab.send_keys("a")
-            await tab.key_up("ctrl")
-            await tab.send_keys(bit_str)
-        except Exception:
-            await date_inputs[1].send_keys(bit_str)
-
-        await asyncio.sleep(0.3)
-    else:
-        log.warning("Tarih inputlari bulunamadi, tarihsiz arama yapiliyor.")
+    # JavaScript ile tarih inputlarini doldur
+    fill_result = await tab.evaluate(f"""
+        (function() {{
+            // Oncelikle id/name icinde 'date' veya 'tarih' gecen inputlari bul
+            var all = Array.from(document.querySelectorAll('input'));
+            var dateInps = all.filter(function(i) {{
+                var s = (i.id + i.name + i.className).toLowerCase();
+                return s.includes('date') || s.includes('tarih');
+            }});
+            // Bulunamazsa: takvim ikonu olan (readOnly olmayan text inputlar)
+            if (dateInps.length < 2) {{
+                dateInps = all.filter(function(i) {{
+                    return i.type === 'text' && !i.readOnly && i.id !== '';
+                }});
+            }}
+            if (dateInps.length >= 2) {{
+                dateInps[0].value = '{bas_str}';
+                ['input','change','blur'].forEach(function(ev) {{
+                    dateInps[0].dispatchEvent(new Event(ev, {{bubbles:true}}));
+                }});
+                dateInps[1].value = '{bit_str}';
+                ['input','change','blur'].forEach(function(ev) {{
+                    dateInps[1].dispatchEvent(new Event(ev, {{bubbles:true}}));
+                }});
+                return 'DOLDURULDU: ' + dateInps[0].id + ' / ' + dateInps[1].id;
+            }}
+            return 'BULUNAMADI (toplam input: ' + all.length + ')';
+        }})()
+    """)
+    log.info(f"Tarih doldurma sonucu: {fill_result}")
 
     # Ara butonuna bas
     ara_ok = False
@@ -197,12 +195,33 @@ async def search_by_date(tab, baslangic: datetime, bitis: datetime):
             ara_ok = True
     except Exception:
         pass
-
     if not ara_ok:
         await _click_sel(tab, ["input[value='Ara']", "#btnSearch", "button.btn-danger"])
 
     await asyncio.sleep(5)
-    await tab.save_screenshot("screenshots/04_search_results.png")
+    await tab.save_screenshot("screenshots/04_search.png")
+
+    # Sayfa HTML kaynagini kaydet — buton yapisi icin
+    try:
+        html = await tab.evaluate("document.documentElement.outerHTML")
+        with open("screenshots/page_source.html", "w", encoding="utf-8") as f:
+            f.write(html)
+        log.info("Sayfa kaynagi: screenshots/page_source.html")
+    except Exception as e:
+        log.warning(f"HTML kayit hatasi: {e}")
+
+    # Ilk satirin link listesi
+    row_links = await tab.evaluate("""
+        var rows = document.querySelectorAll('table tbody tr');
+        if (!rows.length) return 'satir yok';
+        var links = rows[0].querySelectorAll('a');
+        var r = [];
+        links.forEach(function(l) {
+            r.push('cls=' + l.className + ' href=' + l.href + ' title=' + l.title);
+        });
+        return r.join(' || ');
+    """)
+    log.info(f"Ilk satir linkleri: {row_links}")
     log.info("Arama tamamlandi.")
 
 
