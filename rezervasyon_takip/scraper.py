@@ -1,9 +1,9 @@
 """
-touchandbook.com sitesinden rezervasyon ve katilimci bilgilerini ceker.
+touchandbook.com sitesinden tur tarihi ve katilimci bilgilerini ceker.
 nodriver kullanir (Cloudflare bypass icin).
 
 Kullanim:
-    python scraper.py            -> son 7 gun + ileriki 180 gun
+    python scraper.py            -> bugunden itibaren 180 gun
     python scraper.py 30 360     -> son 30 gun + ileriki 360 gun
 """
 
@@ -16,7 +16,13 @@ from datetime import datetime, timedelta
 import nodriver as uc
 
 import database as db
-from config import USERNAME, PASSWORD, LOGIN_URL, FILTRE_TUR_TIPI
+from config import USERNAME, PASSWORD, LOGIN_URL
+
+# ── URL sabitlari ─────────────────────────────────────────────────────────────
+TUR_DATE_LIST_URL = (
+    "https://panel.touchandbook.com"
+    "/Pages/Products/Charter/Tour/Group/TourDateList.aspx"
+)
 
 # ── Loglama ──────────────────────────────────────────────────────────────────
 os.makedirs("screenshots", exist_ok=True)
@@ -31,7 +37,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ── Yardimci fonksiyonlar ─────────────────────────────────────────────────────
+# ── Yardimci ─────────────────────────────────────────────────────────────────
 
 async def _fill(tab, selectors: list, value: str) -> bool:
     for sel in selectors:
@@ -57,38 +63,24 @@ async def _click_sel(tab, selectors: list) -> bool:
     return False
 
 
-async def _click_text(tab, texts: list) -> bool:
-    for text in texts:
-        try:
-            el = await tab.find(text, timeout=3)
-            if el:
-                await el.click()
-                return True
-        except Exception:
-            pass
-    return False
-
-
 # ── 1. GIRIS ─────────────────────────────────────────────────────────────────
 
 async def login(tab):
     log.info("Giris sayfasina gidiliyor...")
     await tab.get(LOGIN_URL)
-    await asyncio.sleep(8)  # Cloudflare otomatik gecmesi icin bekle
-
+    await asyncio.sleep(8)
     await tab.save_screenshot("screenshots/01_login.png")
-    log.info(f"Mevcut URL: {tab.url}")
 
-    # Hala Cloudflare ekranindaysa kullanicidan bekle
+    # Cloudflare kutucugu ciktiysa kullanicinin gecmesini bekle
     try:
-        cf = await tab.select(".cf-turnstile, #challenge-form", timeout=2)
+        cf = await tab.select("#challenge-form", timeout=2)
     except Exception:
         cf = None
 
     if cf or "challenge" in str(tab.url):
         log.info("=" * 60)
         log.info(">>> TARAYICIDA KUTUCUGA TIKLAYIN!")
-        log.info(">>> Giris formu gelene kadar bekliyorum (2 dakika)...")
+        log.info(">>> Giris formu gelene kadar bekliyorum...")
         log.info("=" * 60)
         for _ in range(120):
             await asyncio.sleep(1)
@@ -99,149 +91,127 @@ async def login(tab):
             except Exception:
                 pass
 
-    # Kullanici adini doldur
     kullanici_ok = await _fill(tab, [
-        "#txtUserName",
-        "input[name*='UserName']",
-        "input[name*='user']",
-        "input[type='text']",
+        "#txtUserName", "input[name*='UserName']",
+        "input[name*='user']", "input[type='text']",
     ], USERNAME)
 
     if not kullanici_ok:
         await tab.save_screenshot("screenshots/01_login.png")
-        raise RuntimeError(
-            "Kullanici adi alani bulunamadi!\n"
-            "screenshots/01_login.png dosyasina bakin."
-        )
+        raise RuntimeError("Kullanici adi alani bulunamadi!")
 
-    # Sifreyi doldur
     sifre_ok = await _fill(tab, [
-        "#txtPassword",
-        "input[name*='Password']",
-        "input[type='password']",
+        "#txtPassword", "input[name*='Password']", "input[type='password']",
     ], PASSWORD)
 
     if not sifre_ok:
         raise RuntimeError("Sifre alani bulunamadi!")
 
-    # Giris butonuna bas
     await _click_sel(tab, [
-        "#btnLogin",
-        "input[type='submit']",
-        "button[type='submit']",
+        "#btnLogin", "input[type='submit']", "button[type='submit']",
     ])
 
     await asyncio.sleep(4)
     await tab.save_screenshot("screenshots/02_after_login.png")
 
     if "login" in str(tab.url).lower():
-        raise RuntimeError(
-            "Giris basarisiz! Kullanici adi veya sifre yanlis.\n"
-            "config.py dosyasini kontrol edin."
-        )
+        raise RuntimeError("Giris basarisiz! config.py'deki kullanici adi/sifre kontrol edin.")
 
     log.info(f"Giris basarili -> {tab.url}")
 
 
-# ── 2. TUR LISTESI SAYFASINA GIT ─────────────────────────────────────────────
+# ── 2. TUR TARIHİ SAYFASINA GIT ──────────────────────────────────────────────
 
-async def navigate_to_tur(tab):
-    log.info("Tur listesi sayfasina gidiliyor...")
+async def navigate_to_tur_tarihi(tab):
+    log.info(f"Tur Tarihi sayfasina gidiliyor: {TUR_DATE_LIST_URL}")
+    await tab.get(TUR_DATE_LIST_URL)
+    await asyncio.sleep(4)
+    await tab.save_screenshot("screenshots/03_tur_tarihi.png")
 
-    # Giris sonrasi b2b.touchandbook.com'a yonlendiyse panel'e don
-    if "b2b.touchandbook.com" in str(tab.url):
-        log.info("b2b'den panel.touchandbook.com'a geciliyor...")
-        await tab.get("https://panel.touchandbook.com/")
-        await asyncio.sleep(4)
-        log.info(f"Panel URL: {tab.url}")
+    if "error" in str(tab.url).lower() or "login" in str(tab.url).lower():
+        raise RuntimeError(
+            f"Tur Tarihi sayfasina erisim hatasi: {tab.url}\n"
+            "screenshots/03_tur_tarihi.png dosyasina bakin."
+        )
 
-    # Menu uzerinden gitmeyi dene
-    for ana, alt in [("Rezervasyonlar", "Tur"), ("Ürün", "Tur"), ("Urun", "Tur")]:
-        try:
-            el = await tab.find(ana, timeout=4)
-            if el:
-                await el.click()
-                await asyncio.sleep(1)
-                el2 = await tab.find(alt, timeout=4)
-                if el2:
-                    await el2.click()
-                    await asyncio.sleep(3)
-                    url_now = str(tab.url)
-                    if "tur" in url_now.lower() and "error" not in url_now.lower():
-                        log.info(f"Tur sayfasina ulasildi: {tab.url}")
-                        await tab.save_screenshot("screenshots/03_tur_list.png")
-                        return
-        except Exception as e:
-            log.debug(f"Menu denemesi basarisiz ({ana}>{alt}): {e}")
-
-    # Direkt URL dene
-    base = "https://panel.touchandbook.com"
-    for path in [
-        "/Tur/TourList.aspx",
-        "/Rezervasyon/Tur.aspx",
-        "/Tour/TourList.aspx",
-        "/Tur/List.aspx",
-        "/Rezervasyon/TourList.aspx",
-    ]:
-        try:
-            await tab.get(base + path)
-            await asyncio.sleep(3)
-            url_now = str(tab.url)
-            if "error" not in url_now.lower() and url_now != LOGIN_URL:
-                log.info(f"Tur sayfasina ulasildi: {tab.url}")
-                await tab.save_screenshot("screenshots/03_tur_list.png")
-                return
-            log.debug(f"URL hatali: {url_now}")
-        except Exception as e:
-            log.debug(f"Direkt URL basarisiz ({path}): {e}")
-
-    await tab.save_screenshot("screenshots/03_tur_list_hata.png")
-    raise RuntimeError(
-        "Tur listesi sayfasina ulasilamadi!\n"
-        "screenshots/03_tur_list_hata.png dosyasina bakin.\n"
-        "Tarayicida hangi sayfadasiniz not edin."
-    )
+    log.info(f"Tur Tarihi sayfasi acildi: {tab.url}")
 
 
-# ── 3. ARAMA ─────────────────────────────────────────────────────────────────
+# ── 3. TARİH FİLTRESİ VE ARAMA ───────────────────────────────────────────────
 
-async def search(tab, baslangic: datetime, bitis: datetime):
+async def search_by_date(tab, baslangic: datetime, bitis: datetime):
     bas_str = baslangic.strftime("%d.%m.%Y")
     bit_str  = bitis.strftime("%d.%m.%Y")
-    log.info(f"Arama: {bas_str} - {bit_str}")
+    log.info(f"Tarih araligi: {bas_str} - {bit_str}")
 
-    # Sayfanin tamamen yuklenmesini bekle
     await asyncio.sleep(2)
 
-    # Hata sayfasindaysak dur
-    if "error" in str(tab.url).lower():
-        raise RuntimeError(f"Hata sayfasina yonlendirildi: {tab.url}")
+    # "Tarih Araligi" etiketinin yaninidaki iki date input'u bul
+    # Sayfada birden fazla input var; tarih araligina ozel olanlari bulmaya calis
+    date_inputs = await tab.select_all(
+        "input[id*='Date'], input[id*='date'], "
+        "input[id*='Tarih'], input[id*='tarih'], "
+        "input[placeholder*='gg'], input[placeholder*='GG']"
+    )
 
-    date_inputs = await tab.select_all("input[type='text']")
+    if len(date_inputs) < 2:
+        # Fallback: sayfadaki tum text inputlari al
+        date_inputs = await tab.select_all("input[type='text']")
+
+    log.info(f"Bulunan date input sayisi: {len(date_inputs)}")
+
     if len(date_inputs) >= 2:
-        await date_inputs[0].send_keys(bas_str)
+        # Onceki degerleri temizle ve yaz
+        try:
+            await date_inputs[0].mouse_click()
+            await asyncio.sleep(0.3)
+            await tab.key_down("ctrl")
+            await tab.send_keys("a")
+            await tab.key_up("ctrl")
+            await tab.send_keys(bas_str)
+        except Exception:
+            await date_inputs[0].send_keys(bas_str)
+
         await asyncio.sleep(0.3)
-        await date_inputs[1].send_keys(bit_str)
+
+        try:
+            await date_inputs[1].mouse_click()
+            await asyncio.sleep(0.3)
+            await tab.key_down("ctrl")
+            await tab.send_keys("a")
+            await tab.key_up("ctrl")
+            await tab.send_keys(bit_str)
+        except Exception:
+            await date_inputs[1].send_keys(bit_str)
+
         await asyncio.sleep(0.3)
     else:
         log.warning("Tarih inputlari bulunamadi, tarihsiz arama yapiliyor.")
 
-    ara_ok = await _click_text(tab, ["Ara"]) or await _click_sel(tab, [
-        "input[value='Ara']", "#btnSearch", "input[type='submit']"
-    ])
+    # Ara butonuna bas
+    ara_ok = False
+    try:
+        el = await tab.find("Ara", timeout=4)
+        if el:
+            await el.click()
+            ara_ok = True
+    except Exception:
+        pass
+
     if not ara_ok:
-        log.warning("'Ara' butonu bulunamadi!")
+        await _click_sel(tab, ["input[value='Ara']", "#btnSearch", "button.btn-danger"])
 
     await asyncio.sleep(5)
-    await tab.save_screenshot("screenshots/04_search.png")
+    await tab.save_screenshot("screenshots/04_search_results.png")
     log.info("Arama tamamlandi.")
 
 
 # ── 4. KATILIMCI TABLOSUNU CEK ────────────────────────────────────────────────
 
-async def extract_katilimcilar(tab, rezervasyon_no: str) -> list:
-    await asyncio.sleep(3)
-    await tab.save_screenshot(f"screenshots/detail_{rezervasyon_no[:10]}.png")
+async def extract_katilimcilar(tab, tur_kodu: str) -> list:
+    await asyncio.sleep(4)
+    await tab.save_screenshot(f"screenshots/detail_{tur_kodu[:15]}.png")
+    log.info(f"Detay sayfasi: {tab.url}")
 
     tables = await tab.select_all("table")
     for table in tables:
@@ -262,7 +232,7 @@ async def extract_katilimcilar(tab, rezervasyon_no: str) -> list:
             def v(i): return vals[i] if i < len(vals) else ""
 
             k = {
-                "rezervasyon_no":          rezervasyon_no,
+                "rezervasyon_no":          tur_kodu,
                 "oda_no":                  v(0),
                 "oda_yatak_tipi":          v(1),
                 "pnr_oda":                 v(2),
@@ -298,7 +268,8 @@ async def extract_katilimcilar(tab, rezervasyon_no: str) -> list:
             log.info(f"  -> {len(katilimcilar)} katilimci alindi")
             return katilimcilar
 
-    log.warning(f"  -> Katilimci tablosu bulunamadi ({rezervasyon_no})")
+    log.warning(f"  -> Katilimci tablosu bulunamadi ({tur_kodu})")
+    await tab.save_screenshot(f"screenshots/detail_no_table_{tur_kodu[:15]}.png")
     return []
 
 
@@ -312,19 +283,19 @@ async def run(baslangic: datetime, bitis: datetime):
 
     try:
         await login(tab)
-        await navigate_to_tur(tab)
-        await search(tab, baslangic, bitis)
+        await navigate_to_tur_tarihi(tab)
+        await search_by_date(tab, baslangic, bitis)
 
         sayfa_no = 1
         toplam_islenen = 0
-        islenen_rezervasyonlar: set = set()
+        islenen_turlar: set = set()
 
         while True:
             log.info(f"-- Sayfa {sayfa_no} --")
 
-            tur_url = str(tab.url)
+            liste_url = str(tab.url)
             rows = await tab.select_all("table tbody tr")
-            log.info(f"{len(rows)} satir bulundu")
+            log.info(f"{len(rows)} tur satiri bulundu")
 
             tur_listesi = []
             for row in rows:
@@ -332,100 +303,136 @@ async def run(baslangic: datetime, bitis: datetime):
                     cells = await row.query_selector_all("td")
                     vals  = [(c.text or "").strip() for c in cells]
 
-                    if len(vals) < 9:
+                    if len(vals) < 3:
                         continue
 
-                    tur_tipi_val = ""
-                    for val in vals:
-                        if val in ("Gemi", "Konaklamalı Tur", "Transfer"):
-                            tur_tipi_val = val
-                            break
-
-                    if FILTRE_TUR_TIPI and tur_tipi_val != FILTRE_TUR_TIPI:
-                        continue
-
+                    # TourDateList sutunlari:
+                    # 0: checkbox  1: Tur Adi  2: Tur Kodu  3: Saglayici
+                    # 4: Baslangic-Bitis  5: Hareket  6: Toplam  7: Kullanilan
+                    # 8: Kalan  9: Op.Durum  10: Durum  11: Butonlar
                     def g(i): return vals[i] if i < len(vals) else ""
 
-                    rez_no = g(3).strip()
-                    if not rez_no or rez_no in islenen_rezervasyonlar:
+                    tur_kodu = g(2).strip()
+                    if not tur_kodu or tur_kodu in islenen_turlar:
                         continue
 
-                    tur_listesi.append({
-                        "rezervasyon_no":  rez_no,
-                        "tur_kodu":        g(2),
-                        "service_adi":     g(9),
-                        "baslangic_tarihi":g(6),
-                        "bitis_tarihi":    g(7),
-                        "tur_tipi":        tur_tipi_val,
-                        "saglayici":       g(1),
-                        "firma_referansi": g(4),
-                        "yolcu_adi":       g(10),
-                        "toplam_oda":      g(11),
-                        "toplam_misafir":  g(12),
-                        "toplam_tutar":    g(14),
-                    })
-                except Exception as e:
-                    log.warning(f"Satir hatasi: {e}")
+                    # Tarih araligini ayristir
+                    tarih_str = g(4)
+                    bas_tarih = tarih_str.split(" - ")[0].strip() if " - " in tarih_str else tarih_str
+                    bit_tarih = tarih_str.split(" - ")[1].strip() if " - " in tarih_str else ""
 
-            log.info(f"Bu sayfada {len(tur_listesi)} Gemi rezervasyonu")
+                    tur_listesi.append({
+                        "rezervasyon_no":  tur_kodu,
+                        "tur_kodu":        tur_kodu,
+                        "service_adi":     g(1),
+                        "baslangic_tarihi":bas_tarih,
+                        "bitis_tarihi":    bit_tarih,
+                        "tur_tipi":        "Gemi",
+                        "saglayici":       g(3),
+                        "firma_referansi": "",
+                        "yolcu_adi":       "",
+                        "toplam_oda":      g(7),   # Kullanilan kontejan
+                        "toplam_misafir":  g(7),
+                        "toplam_tutar":    "",
+                    })
+
+                except Exception as e:
+                    log.warning(f"Satir parse hatasi: {e}")
+
+            log.info(f"Bu sayfada {len(tur_listesi)} tur")
 
             for idx, tur_data in enumerate(tur_listesi):
-                rez_no = tur_data["rezervasyon_no"]
-                log.info(f"  [{idx+1}/{len(tur_listesi)}] {rez_no} | {tur_data['service_adi'][:50]}")
+                tur_kodu = tur_data["tur_kodu"]
+                log.info(
+                    f"  [{idx+1}/{len(tur_listesi)}] {tur_kodu} "
+                    f"| {tur_data['service_adi'][:55]}"
+                )
 
                 try:
-                    # Rezervasyon no'yu iceren satirda linki bul
+                    # Sarı/turuncu detay butonunu bul
                     rows_fresh = await tab.select_all("table tbody tr")
-                    info_link  = None
+                    detail_link = None
 
                     for r in rows_fresh:
                         r_text = r.text or ""
-                        if rez_no in r_text:
-                            links = await r.query_selector_all("a")
-                            if links:
-                                info_link = links[0]
+                        if tur_kodu in r_text:
+                            # Once btn-warning (sari), sonra btn-info, sonra ilk link
+                            for btn_sel in [
+                                "a.btn-warning",
+                                "a[class*='warning']",
+                                "a[title*='etay']",
+                                "a[title*='etail']",
+                                "a[href*='etail']",
+                                "a[href*='etay']",
+                            ]:
+                                try:
+                                    b = await r.query_selector(btn_sel)
+                                    if b:
+                                        detail_link = b
+                                        break
+                                except Exception:
+                                    pass
+
+                            # Hala bulunamadiysa satirdaki tum linklere bak
+                            if not detail_link:
+                                links = await r.query_selector_all("a")
+                                if links:
+                                    # Sarı/turuncu buton genellikle 2. veya 3. link
+                                    for lnk in links:
+                                        attrs = lnk.attrs or {}
+                                        cls = attrs.get("class", "")
+                                        if "warning" in cls or "info" in cls:
+                                            detail_link = lnk
+                                            break
+                                    if not detail_link and len(links) >= 2:
+                                        detail_link = links[1]  # 2. butonu dene
+
                             break
 
-                    if not info_link:
-                        log.warning(f"  'i' butonu bulunamadi: {rez_no}")
+                    if not detail_link:
+                        log.warning(f"  Detay butonu bulunamadi: {tur_kodu}")
+                        await tab.save_screenshot(f"screenshots/no_btn_{tur_kodu[:10]}.png")
                         continue
 
-                    href = (info_link.attrs or {}).get("href", "")
+                    # Detay sayfasina git
+                    href = (detail_link.attrs or {}).get("href", "")
                     if href:
                         if not href.startswith("http"):
-                            base = "/".join(str(tab.url).split("/")[:3])
+                            base = "https://panel.touchandbook.com"
                             href = base + "/" + href.lstrip("/")
                         await tab.get(href)
                     else:
-                        await info_link.click()
+                        await detail_link.click()
 
-                    katilimcilar = await extract_katilimcilar(tab, rez_no)
+                    # Katilimcilari cek
+                    katilimcilar = await extract_katilimcilar(tab, tur_kodu)
 
+                    # Veritabanina kaydet
                     db.upsert_tur(tur_data)
-                    db.delete_katilimcilar(rez_no)
+                    db.delete_katilimcilar(tur_kodu)
                     for k in katilimcilar:
                         db.insert_katilimci(k)
 
-                    islenen_rezervasyonlar.add(rez_no)
+                    islenen_turlar.add(tur_kodu)
                     toplam_islenen += 1
-                    log.info(f"  V Kaydedildi: {rez_no}")
+                    log.info(f"  V Kaydedildi: {tur_kodu} ({len(katilimcilar)} katilimci)")
 
-                    # Listeye geri don
-                    await tab.get(tur_url)
+                    # Tur listesine geri don
+                    await tab.get(liste_url)
                     await asyncio.sleep(2)
 
                 except Exception as e:
-                    log.error(f"  Hata ({rez_no}): {e}")
+                    log.error(f"  Hata ({tur_kodu}): {e}")
                     try:
-                        await tab.save_screenshot(f"screenshots/hata_{rez_no[:10]}.png")
+                        await tab.save_screenshot(f"screenshots/hata_{tur_kodu[:10]}.png")
                     except Exception:
                         pass
-                    await tab.get(tur_url)
+                    await tab.get(liste_url)
                     await asyncio.sleep(2)
 
             # Sonraki sayfa var mi?
             next_btn = None
-            for text in ["Sonraki", "Next", "»"]:
+            for text in ["Sonraki", ">", "»"]:
                 try:
                     el = await tab.find(text, timeout=2)
                     if el:
@@ -442,7 +449,7 @@ async def run(baslangic: datetime, bitis: datetime):
             await asyncio.sleep(3)
             sayfa_no += 1
 
-        log.info(f"\nTAMAMLANDI - Toplam {toplam_islenen} rezervasyon islendi.\n")
+        log.info(f"\nTAMAMLANDI - Toplam {toplam_islenen} tur islendi.\n")
 
     except Exception as e:
         log.error(f"KRITIK HATA: {e}")
@@ -455,10 +462,10 @@ async def run(baslangic: datetime, bitis: datetime):
         browser.stop()
 
 
-# ── Komut satiri girisi ───────────────────────────────────────────────────────
+# ── Komut satiri ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    gecmis_gun = int(sys.argv[1]) if len(sys.argv) > 1 else 7
+    gecmis_gun = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     ileri_gun  = int(sys.argv[2]) if len(sys.argv) > 2 else 180
     bas = datetime.now() - timedelta(days=gecmis_gun)
     bit = datetime.now() + timedelta(days=ileri_gun)
