@@ -148,11 +148,13 @@ async def search_by_date(tab, baslangic: datetime, bitis: datetime):
     # Tum inputlari logla
     try:
         input_log = await tab.evaluate("""
-            var r = [];
-            document.querySelectorAll('input').forEach(function(el, i) {
-                r.push(i+': id='+el.id+' name='+el.name+' type='+el.type+' val='+el.value);
-            });
-            return r.join('\\n');
+            (function() {
+                var r = [];
+                document.querySelectorAll('input').forEach(function(el, i) {
+                    r.push(i+': id='+el.id+' name='+el.name+' type='+el.type+' val='+el.value);
+                });
+                return r.join('\\n');
+            })()
         """)
         log.info("=== INPUT LISTESI ===\n" + str(input_log))
     except Exception as e:
@@ -207,24 +209,30 @@ async def search_by_date(tab, baslangic: datetime, bitis: datetime):
     # Sayfa HTML kaynagini kaydet — buton yapisi icin
     try:
         html = await tab.evaluate("document.documentElement.outerHTML")
+        html_str = str(html)
         with open("screenshots/page_source.html", "w", encoding="utf-8") as f:
-            f.write(html)
+            f.write(html_str)
         log.info("Sayfa kaynagi: screenshots/page_source.html")
     except Exception as e:
         log.warning(f"HTML kayit hatasi: {e}")
 
     # Ilk satirin link listesi
-    row_links = await tab.evaluate("""
-        var rows = document.querySelectorAll('table tbody tr');
-        if (!rows.length) return 'satir yok';
-        var links = rows[0].querySelectorAll('a');
-        var r = [];
-        links.forEach(function(l) {
-            r.push('cls=' + l.className + ' href=' + l.href + ' title=' + l.title);
-        });
-        return r.join(' || ');
-    """)
-    log.info(f"Ilk satir linkleri: {str(row_links)}")
+    try:
+        row_links = await tab.evaluate("""
+            (function() {
+                var rows = document.querySelectorAll('table tbody tr');
+                if (!rows.length) return 'satir yok';
+                var links = rows[0].querySelectorAll('a');
+                var r = [];
+                links.forEach(function(l) {
+                    r.push('cls=' + l.className + ' href=' + l.href + ' title=' + l.title);
+                });
+                return r.join(' || ');
+            })()
+        """)
+        log.info(f"Ilk satir linkleri: {str(row_links)}")
+    except Exception as e:
+        log.warning(f"Ilk satir linkleri alinamadi: {e}")
     log.info("Arama tamamlandi.")
 
 
@@ -336,6 +344,9 @@ async def run(baslangic: datetime, bitis: datetime):
 
                     tur_kodu = g(2).strip()
                     if not tur_kodu or tur_kodu in islenen_turlar:
+                        continue
+                    # Pagination satirlarini atla (sadece rakam olanlar)
+                    if tur_kodu.isdigit():
                         continue
 
                     # Tarih araligini ayristir
