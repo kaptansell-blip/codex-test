@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Neva &amp; Kremlin Rehberi</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="St. Petersburg & Moskova turu (10–15 Kasım 2026) için çevrimdışı çalışan kişisel seyahat rehberi.">
+<meta name="theme-color" content="#123a37" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1416" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Neva&amp;Kremlin">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar" id="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <div class="brand-title">Neva &amp; Kremlin</div>
+          <div class="brand-sub" id="brandSub">St. Petersburg · Moskova · 10–15 Kasım</div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span class="net-pill" id="netPill" hidden>Çevrimdışı</span>
+        <button class="icon-btn" id="btnTools" aria-label="Araçlar ve ayarlar"></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <nav class="tabbar" id="tabbar" aria-label="Ana menü">
+    <button data-tab="bugun"><span class="ti" data-icon="sun"></span><span>Bugün</span></button>
+    <button data-tab="program"><span class="ti" data-icon="calendar"></span><span>Program</span></button>
+    <button data-tab="harita"><span class="ti" data-icon="map"></span><span>Harita</span></button>
+    <button data-tab="kesfet"><span class="ti" data-icon="compass"></span><span>Keşfet</span></button>
+    <button data-tab="belgeler"><span class="ti" data-icon="ticket"></span><span>Belgeler</span></button>
+  </nav>
+</div>
+
+<div class="sheet-wrap" id="sheetWrap" hidden>
+  <div class="sheet-backdrop" data-close></div>
+  <section class="sheet" id="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-grip" data-close></div>
+    <button class="sheet-close" data-close aria-label="Kapat">×</button>
+    <div class="sheet-body" id="sheetBody"></div>
+  </section>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
