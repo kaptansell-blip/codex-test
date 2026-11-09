@@ -20,4 +20,4 @@ Sayfayı Safari'de açın → Paylaş → **Ana Ekrana Ekle**. Ardından Wi-Fi'd
 Kişisel belgeler depoda düz metin olarak bulunmaz. `docs/data/belgeler.enc.json` dosyası PBKDF2 + AES-256-GCM ile şifrelenmiştir ve yalnızca tarayıcıda çözülür. Yeniden şifrelemek için:
 `python3 tools/encrypt_docs.py manifest.json docs/data/belgeler.enc.json "<parola>"`
 
-Harita verisi © OpenStreetMap katkıcıları, harita karoları © CARTO. Fotoğraflar, internet varken Wikipedia/Wikimedia Commons'tan alınır.
+Harita verisi © OpenStreetMap katkıcıları, harita karoları © Esri. Fotoğraflar, internet varken Wikipedia/Wikimedia Commons'tan alınır.

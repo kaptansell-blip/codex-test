@@ -651,7 +651,7 @@
 
   /* ---------------- Görünüm: HARİTA ---------------- */
   let map = null, layers = null, meMarker = null;
-  const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png';
+  const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
   const gridTile = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e9eeec"/><path d="M0 0H256M0 0V256" stroke="#d2dbd8" stroke-width="2"/></svg>');
   function viewMap() {
     if (!state.city) state.city = activeCity();
@@ -678,8 +678,8 @@
     if (typeof L === 'undefined') { $('#mapStatus').textContent = 'Harita kütüphanesi yüklenemedi'; return; }
     const c = T.cities[state.city];
     map = L.map('map', { zoomControl: false, attributionControl: true, tap: true }).setView(c.center, c.zoom);
-    L.tileLayer(TILE_URL, { subdomains: 'abcd', maxZoom: 18, minZoom: 9, tileSize: 256, errorTileUrl: gridTile, crossOrigin: true,
-      attribution: '© OpenStreetMap katkıcıları © CARTO', className: 'tiles' }).addTo(map);
+    L.tileLayer(TILE_URL, { maxZoom: 19, minZoom: 9, tileSize: 256, errorTileUrl: gridTile, crossOrigin: true,
+      attribution: 'Harita © Esri, HERE, Garmin, © OpenStreetMap katkıcıları', className: 'tiles' }).addTo(map);
     layers = L.layerGroup().addTo(map);
     T.places.filter((p) => p.city === state.city).forEach((p) => {
       L.marker([p.lat, p.lon], { icon: pinIcon(p), title: p.name }).addTo(layers).on('click', () => openPlace(p.id));
@@ -733,7 +733,7 @@
     AREAS[city].forEach((a) => {
       for (let z = a.z[0]; z <= a.z[1]; z++) {
         const [x0, y0] = tileXY(a.b[2], a.b[1], z), [x1, y1] = tileXY(a.b[0], a.b[3], z);
-        for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.add(`https://a.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}@2x.png`);
+        for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.add(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`);
       }
     });
     return Array.from(out);
@@ -758,16 +758,16 @@
     await c.put(url, r);
   }
   function offlineCard() {
-    const st = store.get('offline', {});
+    const st = store.get('offline2', {});
     const ok = st.spb && st.msk && st.photos;
     return `<div class="section-title">Çevrimdışı kullanım</div>
       <div class="card"><div class="card-row" style="align-items:flex-start">${icon(ok ? 'check' : 'download').replace('<svg class=""', `<svg style="width:26px;height:26px;flex:none;color:${ok ? 'var(--ok)' : 'var(--gold)'}"`)}
         <div style="min-width:0"><b>${ok ? 'Haritalar ve fotoğraflar telefonda' : 'Wi-Fi’dayken çevrimdışı hazırlayın'}</b>
-        <p class="muted" style="font-size:.88rem;margin-top:2px">${ok ? 'İnternet olmadan da harita, fotoğraf ve belgeler açılır.' : 'Rusya’da mobil internet kesilebilir. Haritaları (≈30–40 MB) ve fotoğrafları şimdi indirin.'}</p></div></div>
+        <p class="muted" style="font-size:.88rem;margin-top:2px">${ok ? 'İnternet olmadan da harita, fotoğraf ve belgeler açılır.' : 'Rusya’da mobil internet kesilebilir. Haritaları (≈15–25 MB) ve fotoğrafları şimdi indirin.'}</p></div></div>
         <button class="btn ${ok ? '' : 'gold'} block" data-tool="offline" style="margin-top:12px">${icon('download')} ${ok ? 'Durumu gör / güncelle' : 'Çevrimdışı hazırla'}</button></div>`;
   }
   function openOffline() {
-    const st = store.get('offline', {});
+    const st = store.get('offline2', {});
     const counts = { spb: tileList('spb').length, msk: tileList('msk').length };
     const photoTitles = Array.from(new Set(T.places.map((p) => p.wiki).filter(Boolean)));
     openSheet(`<h2>Çevrimdışı hazırla</h2>
@@ -782,7 +782,7 @@
           <div class="progress"><i id="prog-photos" style="width:${st.photos ? 100 : 0}%"></i></div><p class="muted" id="msg-photos" style="font-size:.8rem;margin-top:6px"></p>
           <button class="btn block" data-dl="photos" style="margin-top:8px">${icon('download')} ${st.photos ? 'Yeniden indir' : 'İndir'}</button></div>
         <button class="btn gold block" data-dl="all">${icon('download')} Hepsini indir</button>
-        <p class="muted" style="font-size:.8rem">Harita verisi © OpenStreetMap katkıcıları, karolar © CARTO. iPhone’da uygulamayı Ana Ekran’a ekleyip oradan açarsanız indirilenler kalıcı olur.</p>
+        <p class="muted" style="font-size:.8rem">Harita © Esri, HERE, Garmin ve OpenStreetMap katkıcıları. iPhone’da uygulamayı Ana Ekran’a ekleyip oradan açarsanız indirilenler kalıcı olur.</p>
       </div>`, (root) => {
       const dl = async (what) => {
         if (!('caches' in window)) { toast('Bu tarayıcı çevrimdışı önbelleği desteklemiyor'); return; }
@@ -795,13 +795,13 @@
             if (info && info.src) await cacheUrl('nk-photos', info.src, { mode: 'cors' });
           }, (d, f) => { n = d; bar.style.width = `${d / photoTitles.length * 100}%`; msg.textContent = `${d} / ${photoTitles.length}${f ? ` · ${f} alınamadı` : ''}`; }, 4);
           void n;
-          st.photos = res.fail < photoTitles.length / 2; store.set('offline', st);
+          st.photos = res.fail < photoTitles.length / 2; store.set('offline2', st);
           msg.textContent = st.photos ? `Tamam · ${res.done - res.fail} fotoğraf kaydedildi` : 'Fotoğraflar indirilemedi. Bağlantıyı kontrol edin.';
           return;
         }
         const urls = tileList(what);
         const res = await runPool(urls, (u) => cacheUrl('nk-tiles', u, { mode: 'cors' }), (d, f) => { bar.style.width = `${d / urls.length * 100}%`; msg.textContent = `${d} / ${urls.length}${f ? ` · ${f} hata` : ''}`; });
-        st[what] = res.fail < urls.length * 0.05; store.set('offline', st);
+        st[what] = res.fail < urls.length * 0.05; store.set('offline2', st);
         msg.textContent = st[what] ? 'Tamam · harita telefonda' : `${res.fail} kare indirilemedi; tekrar deneyin.`;
       };
       $$('[data-dl]', root).forEach((b) => b.onclick = async () => {
@@ -1007,6 +1007,8 @@
   if (saved) decryptDocs(saved).then((d) => { state.docs = d; render(); }).catch(() => store.del('pass'));
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(() => { /* çevrimdışı önbellek kullanılamıyor */ });
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) location.reload(); });
+    navigator.serviceWorker.register('sw.js').then((r) => r.update()).catch(() => { /* çevrimdışı önbellek kullanılamıyor */ });
   }
 })();
