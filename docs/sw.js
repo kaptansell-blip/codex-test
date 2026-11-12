@@ -1,7 +1,7 @@
 /* Service worker: uygulamayı, haritaları ve fotoğrafları çevrimdışı sunar. */
-const VERSION = 'nk-v2';
+const VERSION = 'nk-v3';
 const SHELL = [
-  './', 'index.html', 'styles.css', 'app.js', 'data.js', 'manifest.webmanifest',
+  './', 'index.html', 'styles.css', 'app.js', 'data.js', 'menu.js', 'manifest.webmanifest',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
   'data/belgeler.enc.json',
@@ -14,9 +14,13 @@ const SHELL = [
 const TILES = 'nk-tiles-esri';
 const OLD = ['nk-tiles']; // CARTO'nun "API KEY REQUIRED" karolarını içeren eski önbellek
 const PHOTOS = 'nk-photos';
+const OCR = 'nk-ocr';
+const OCR_FILES = ['vendor/ocr/tesseract.min.js', 'vendor/ocr/worker.min.js', 'vendor/ocr/tesseract-core-simd-lstm.wasm.js', 'vendor/ocr/tesseract-core-lstm.wasm.js', 'vendor/ocr/rus.traineddata.gz'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
+  // Menü çevirici dosyaları büyük (≈ 11 MB): kurulumu engellemeden arka planda önbelleğe al
+  caches.open(OCR).then((c) => Promise.all(OCR_FILES.map((u) => c.match(u).then((hit) => hit || fetch(u).then((r) => { if (r.ok) return c.put(u, r); }))))).catch(() => {});
 });
 
 self.addEventListener('activate', (e) => {
@@ -58,6 +62,10 @@ self.addEventListener('fetch', (e) => {
   }
   if (url.hostname === 'upload.wikimedia.org') {
     e.respondWith(cacheFirst(PHOTOS, req).catch(() => new Response('', { status: 504 })));
+    return;
+  }
+  if (url.origin === self.location.origin && url.pathname.includes('/vendor/ocr/')) {
+    e.respondWith(cacheFirst(OCR, req, new Request(url.pathname.slice(url.pathname.indexOf('vendor/ocr/')))).catch(() => new Response('', { status: 504 })));
     return;
   }
   if (url.origin === self.location.origin) {

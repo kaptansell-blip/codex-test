@@ -433,10 +433,10 @@
   }
   function toolsGrid() {
     return `<div class="tool-grid">
+      <button class="tool" data-tool="menuceviri">${icon('food')}Menü çevir</button>
       <button class="tool" data-tool="doviz">${icon('coins')}Döviz</button>
       <button class="tool" data-tool="rusca">${icon('lang')}Rusça</button>
       <button class="tool" data-tool="acil">${icon('sos')}Acil</button>
-      <button class="tool" data-tool="valiz">${icon('case')}Valiz</button>
     </div>`;
   }
   function suggestHTML() {
@@ -759,7 +759,7 @@
   }
   function offlineCard() {
     const st = store.get('offline2', {});
-    const ok = st.spb && st.msk && st.photos;
+    const ok = st.spb && st.msk && st.photos && st.ocr;
     return `<div class="section-title">Çevrimdışı kullanım</div>
       <div class="card"><div class="card-row" style="align-items:flex-start">${icon(ok ? 'check' : 'download').replace('<svg class=""', `<svg style="width:26px;height:26px;flex:none;color:${ok ? 'var(--ok)' : 'var(--gold)'}"`)}
         <div style="min-width:0"><b>${ok ? 'Haritalar ve fotoğraflar telefonda' : 'Wi-Fi’dayken çevrimdışı hazırlayın'}</b>
@@ -781,6 +781,10 @@
           <p class="muted" style="font-size:.85rem;margin:4px 0 10px">Wikipedia’dan, yaklaşık 3–5 MB.</p>
           <div class="progress"><i id="prog-photos" style="width:${st.photos ? 100 : 0}%"></i></div><p class="muted" id="msg-photos" style="font-size:.8rem;margin-top:6px"></p>
           <button class="btn block" data-dl="photos" style="margin-top:8px">${icon('download')} ${st.photos ? 'Yeniden indir' : 'İndir'}</button></div>
+        <div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b>Menü çevirici</b><span class="badge ${st.ocr ? '' : 'off'}">${st.ocr ? 'İndirildi' : '≈ 7 MB'}</span></div>
+          <p class="muted" style="font-size:.85rem;margin:4px 0 10px">Rusça yazı okuma motoru. İnternetsiz menü fotoğrafı çevirmek için.</p>
+          <div class="progress"><i id="prog-ocr" style="width:${st.ocr ? 100 : 0}%"></i></div><p class="muted" id="msg-ocr" style="font-size:.8rem;margin-top:6px"></p>
+          <button class="btn block" data-dl="ocr" style="margin-top:8px">${icon('download')} ${st.ocr ? 'Yeniden indir' : 'İndir'}</button></div>
         <button class="btn gold block" data-dl="all">${icon('download')} Hepsini indir</button>
         <p class="muted" style="font-size:.8rem">Harita © Esri, HERE, Garmin ve OpenStreetMap katkıcıları. iPhone’da uygulamayı Ana Ekran’a ekleyip oradan açarsanız indirilenler kalıcı olur.</p>
       </div>`, (root) => {
@@ -788,6 +792,13 @@
         if (!('caches' in window)) { toast('Bu tarayıcı çevrimdışı önbelleği desteklemiyor'); return; }
         if (!navigator.onLine) { toast('İnternet bağlantısı gerekli'); return; }
         const bar = root.querySelector('#prog-' + what), msg = root.querySelector('#msg-' + what);
+        if (what === 'ocr') {
+          const res = await runPool(OCR_FILES, async (u) => { const r = await fetch(u); if (!r.ok) throw new Error(r.status); await (await caches.open('nk-ocr')).put(u, r); },
+            (d, f) => { bar.style.width = `${d / OCR_FILES.length * 100}%`; msg.textContent = `${d} / ${OCR_FILES.length}${f ? ` · ${f} hata` : ''}`; }, 2);
+          st.ocr = res.fail === 0; store.set('offline2', st);
+          msg.textContent = st.ocr ? 'Tamam · menü çevirici internetsiz çalışır' : 'İndirilemedi; tekrar deneyin.';
+          return;
+        }
         if (what === 'photos') {
           let n = 0;
           const res = await runPool(photoTitles, async (t) => {
@@ -806,15 +817,114 @@
       };
       $$('[data-dl]', root).forEach((b) => b.onclick = async () => {
         b.disabled = true;
-        if (b.dataset.dl === 'all') { await dl('spb'); await dl('msk'); await dl('photos'); } else await dl(b.dataset.dl);
+        if (b.dataset.dl === 'all') { await dl('ocr'); await dl('spb'); await dl('msk'); await dl('photos'); } else await dl(b.dataset.dl);
         b.disabled = false; render();
       });
     });
   }
 
+
+  /* ---------------- Çevrimdışı menü çevirisi (OCR + yemek sözlüğü) ---------------- */
+  const TRANSLIT = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ç', ш: 'ş', щ: 'şç', ъ: '', ы: 'ı', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+  const translit = (t) => t.toLowerCase().replace(/[а-яё]/g, (c) => TRANSLIT[c] ?? c);
+  let stemIndex = null;
+  function lookupWord(w) {
+    const M = window.MENU;
+    if (!stemIndex) stemIndex = M.stems.slice().sort((a, b) => b[0].length - a[0].length);
+    const k = w.toLowerCase();
+    if (M.words[k]) return { tr: M.words[k], f: M.flags[k] };
+    const k2 = k.replace(/ё/g, 'е');
+    for (const [stem, tr, f] of stemIndex) { if (k2.startsWith(stem.replace(/ё/g, 'е')) && (stem.length >= 3 || k2.length <= stem.length + 2)) return { tr, f }; }
+    return null;
+  }
+  function translateLine(line) {
+    const words = line.match(/[А-Яа-яЁё]+(?:-[А-Яа-яЁё]+)*/g) || [];
+    const parts = [], flags = new Set(); let hits = 0, content = 0;
+    words.forEach((w) => {
+      let r = lookupWord(w);
+      if (!r && w.includes('-')) { const sub = w.split('-').map(lookupWord).filter(Boolean); if (sub.length) r = { tr: sub.map((x) => x.tr).join(' '), f: (sub.find((x) => x.f) || {}).f }; }
+      if (w.length > 2) content++;
+      if (r) { if (w.length > 2) hits++; if (r.f) flags.add(r.f); if (parts[parts.length - 1] !== r.tr) parts.push(r.tr); } else if (w.length > 2) parts.push('“' + translit(w) + '”');
+    });
+    const price = (line.match(/\d[\d\s.,]*\s?(?:₽|руб|р\b|P\b)/i) || [])[0];
+    return { ru: line, words: words.length, hits, content, tr: parts.join(' · '), flags: Array.from(flags), price };
+  }
+  function menuResultHTML(text) {
+    const lines = text.split(/\n+/).map((l) => l.trim()).filter((l) => /[А-Яа-яЁё]{2,}/.test(l));
+    if (!lines.length) return '<p class="empty">Rusça yazı bulunamadı. Fotoğrafı daha yakından, düz ve iyi ışıkta çekip tekrar deneyin.</p>';
+    const res = lines.map(translateLine);
+    const pork = res.filter((r) => r.flags.includes('pork')).length;
+    return `${pork ? `<div class="alert" style="margin-bottom:10px">${icon('warn')}<div><b>${pork} satırda domuz eti olabilir.</b> Kırmızı işaretli satırlara dikkat edin; emin değilseniz garsona sorun.</div></div>` : ''}
+      <div class="list">${res.map((r) => `<div class="mt-line ${r.flags.includes('pork') ? 'pork' : ''}">
+        <div class="mt-ru ru" lang="ru">${esc(r.ru)}</div>
+        <div class="mt-tr">${r.hits ? esc(r.tr) : '<span class="muted">sözlükte yok · okunuşu: ' + esc(translit(r.ru)) + '</span>'}</div>
+        <div class="mt-meta">${r.flags.includes('pork') ? '<span class="badge" style="background:var(--msk-soft);color:var(--msk)">Domuz olabilir</span>' : ''}${r.flags.includes('alc') ? '<span class="badge gold">Alkol</span>' : ''}<button class="copy" data-big="${esc(r.ru)}">Garsona göster</button></div>
+      </div>`).join('')}</div>
+      <p class="muted" style="font-size:.8rem;margin-top:10px">Bu, kelime kelime sözlük çevirisidir; tırnak içindekiler sözlükte olmayan kelimelerin okunuşudur. İçerikten emin olmak için garsona sorun: “Здесь есть свинина?” (Zdes yest svinina? · Domuz eti var mı?)</p>`;
+  }
+  function loadScript(src) { return new Promise((ok, no) => { if (window.Tesseract) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); }); }
+  async function fileToCanvas(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+      const max = 2200, k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      return c;
+    } finally { URL.revokeObjectURL(url); }
+  }
+  let ocrWorker = null;
+  async function ocr(file, onProgress) {
+    await loadScript('vendor/ocr/tesseract.min.js');
+    if (!ocrWorker) {
+      ocrWorker = await Tesseract.createWorker('rus', 1, {
+        workerPath: 'vendor/ocr/worker.min.js', corePath: 'vendor/ocr/', langPath: 'vendor/ocr/', gzip: true, workerBlobURL: false,
+        logger: (m) => { if (m.status === 'recognizing text') onProgress(m.progress); }
+      });
+    }
+    const canvas = await fileToCanvas(file);
+    const { data } = await ocrWorker.recognize(canvas);
+    return data.text || '';
+  }
+  function openMenuTranslate() {
+    openSheet(`<h2>Menü çevirici</h2>
+      <p class="muted" style="margin:6px 0 14px">Rusça menünün fotoğrafını çekin; yazı telefonda okunur ve yemek sözlüğüyle Türkçeye çevrilir. İnternet gerekmez.</p>
+      <div class="btn-row">
+        <label class="btn primary" for="menuCam">${icon('pin')} Fotoğraf çek</label>
+        <label class="btn" for="menuPick">${icon('download')} Galeriden seç</label>
+      </div>
+      <input type="file" id="menuCam" accept="image/*" capture="environment" hidden>
+      <input type="file" id="menuPick" accept="image/*" hidden>
+      <div id="menuProg" hidden style="margin-top:14px"><div class="progress"><i id="menuBar" style="width:0%"></i></div><p class="muted" id="menuMsg" style="font-size:.85rem;margin-top:6px">Hazırlanıyor…</p></div>
+      <div id="menuOut" style="margin-top:14px"></div>
+      <div class="section-title">Ya da Rusça yazıyı elle girin</div>
+      <textarea class="input ru" id="menuText" rows="3" style="padding:10px 14px;min-height:84px" placeholder="Борщ со сметаной…" lang="ru"></textarea>
+      <button class="btn block" id="menuGo" style="margin-top:8px">Çevir</button>
+      <p class="muted" style="font-size:.8rem;margin-top:14px">İpucu: menüyü düz tutun, tek sayfa çekin, parlama olmasın. El yazısı ve süslü yazı tipleri iyi okunmaz.</p>`, (root) => {
+      const out = root.querySelector('#menuOut'), prog = root.querySelector('#menuProg'), bar = root.querySelector('#menuBar'), msg = root.querySelector('#menuMsg');
+      const show = (text) => { out.innerHTML = menuResultHTML(text); $$('[data-big]', out).forEach((b) => b.onclick = () => showBig(b.dataset.big, 'Menüden')); };
+      const run = async (file) => {
+        if (!file) return;
+        prog.hidden = false; out.innerHTML = ''; bar.style.width = '5%'; msg.textContent = 'Okuma motoru yükleniyor…';
+        try {
+          const text = await ocr(file, (p) => { bar.style.width = `${Math.round(10 + p * 90)}%`; msg.textContent = `Yazı okunuyor… %${Math.round(p * 100)}`; });
+          prog.hidden = true; show(text);
+        } catch (e) {
+          prog.hidden = true;
+          out.innerHTML = `<div class="alert">${icon('warn')}<div>Okuma motoru açılamadı. İlk kullanım için internet gerekir (yaklaşık 7 MB iner); internetteyken Araçlar → Çevrimdışı ekranından “Menü çevirici”yi indirin.</div></div>`;
+        }
+      };
+      root.querySelector('#menuCam').onchange = (e) => run(e.target.files[0]);
+      root.querySelector('#menuPick').onchange = (e) => run(e.target.files[0]);
+      root.querySelector('#menuGo').onclick = () => show(root.querySelector('#menuText').value);
+    });
+  }
+  const OCR_FILES = ['vendor/ocr/tesseract.min.js', 'vendor/ocr/worker.min.js', 'vendor/ocr/tesseract-core-simd-lstm.wasm.js', 'vendor/ocr/tesseract-core-lstm.wasm.js', 'vendor/ocr/rus.traineddata.gz'];
+
   /* ---------------- Araçlar ---------------- */
   function openTool(name) {
     if (name === 'offline') return openOffline();
+    if (name === 'menuceviri') return openMenuTranslate();
     if (name === 'menu') {
       const th = store.get('theme', 'auto');
       return openSheet(`<h2>Araçlar</h2>
@@ -826,6 +936,7 @@
           <button class="tool" data-tool="otel">${icon('bed')}Oteller</button>
           <button class="tool" data-tool="ipucu">${icon('bulb')}İpuçları</button>
           <button class="tool" data-tool="offline">${icon('download')}Çevrimdışı</button>
+          <button class="tool" data-tool="menuceviri">${icon('food')}Menü çevir</button>
           <button class="tool" data-tool="kur">${icon('phone')}Kurulum</button>
         </div>
         <div class="section-title">Görünüm</div>
