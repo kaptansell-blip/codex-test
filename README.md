@@ -8,7 +8,7 @@ St. Petersburg & Moskova turu (10–15 Kasım 2026) için iPhone'a kurulabilen, 
 - **Harita**: tüm yerler, konumunuz ve oteliniz; Wi-Fi'dayken indirilen harita kareleriyle çevrimdışı çalışır
 - **Keşfet**: 60'a yakın yer (müze, saray, yemek, alışveriş, metro), arama, favoriler, Yandex / 2GIS / Apple Haritalar bağlantıları ve taksiciye Rusça adres gösterme
 - **Belgeler**: uçak ve tren biletleri, e-vize, sigorta (şifreli; parolayla açılır)
-- **Menü çevirici**: Rusça menü fotoğrafını telefonda okur (Tesseract OCR) ve yemek sözlüğüyle Türkçeye çevirir; domuz eti ve alkol içeren satırları işaretler. İnternet gerekmez
+- **Fotoğraftan çeviri**: tabela, levha, menü ya da kitap sayfasının fotoğrafındaki Rusça yazıyı telefonda okur (Tesseract OCR) ve Türkçeye çevirir (Mozilla Bergamot / Firefox Translations modelleri, Rusça → İngilizce → Türkçe). Menü modunda yemek sözlüğü kullanır, domuz eti ve alkolü işaretler. İnternet gerekmez
 - **Araçlar**: döviz çevirici, sesli Rusça ifadeler ve Kiril alfabesi, acil numaralar, valiz listesi
 
 ## Yayınlama (GitHub Pages)

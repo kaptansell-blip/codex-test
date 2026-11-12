@@ -1,0 +1,4 @@
+{
+  "ruen": { "model": { "name": "vendor/mt/models/model.ruen.intgemm.alphas.bin" }, "lex": { "name": "vendor/mt/models/lex.50.50.ruen.s2t.bin" }, "vocab": { "name": "vendor/mt/models/vocab.ruen.spm" } },
+  "entr": { "model": { "name": "vendor/mt/models/model.entr.intgemm.alphas.bin" }, "lex": { "name": "vendor/mt/models/lex.50.50.entr.s2t.bin" }, "vocab": { "name": "vendor/mt/models/vocab.entr.spm" } }
+}

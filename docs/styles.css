@@ -402,8 +402,9 @@ body:not(.city-msk) .hero-eyebrow { color: #d9b56a; }
 /* ---------- Menü çevirici ---------- */
 .mt-line { display: grid; gap: 3px; }
 .mt-line.pork { background: var(--msk-soft); }
-.mt-ru { font-weight: 700; overflow-wrap: anywhere; }
-.mt-tr { color: var(--accent); overflow-wrap: anywhere; }
+.mt-tr { font-weight: 700; font-size: 1.05rem; overflow-wrap: anywhere; }
+.mt-ru { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+.mt-gloss { font-size: .82rem; color: var(--accent); overflow-wrap: anywhere; }
 .mt-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .mt-meta .copy { padding-left: 0; }
 textarea.input { resize: vertical; font-size: 1rem; }

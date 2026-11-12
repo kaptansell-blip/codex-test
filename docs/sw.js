@@ -1,5 +1,5 @@
 /* Service worker: uygulamayı, haritaları ve fotoğrafları çevrimdışı sunar. */
-const VERSION = 'nk-v3';
+const VERSION = 'nk-v4';
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'data.js', 'menu.js', 'manifest.webmanifest',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
@@ -66,6 +66,11 @@ self.addEventListener('fetch', (e) => {
   }
   if (url.origin === self.location.origin && url.pathname.includes('/vendor/ocr/')) {
     e.respondWith(cacheFirst(OCR, req, new Request(url.pathname.slice(url.pathname.indexOf('vendor/ocr/')))).catch(() => new Response('', { status: 504 })));
+    return;
+  }
+  if (url.origin === self.location.origin && url.pathname.includes('/vendor/mt/')) {
+    // Çeviri motoru ve modelleri (≈ 50 MB): ilk kullanımda ya da Çevrimdışı ekranından kalıcı önbelleğe alınır
+    e.respondWith(cacheFirst('nk-mt', req, new Request(url.pathname.slice(url.pathname.indexOf('vendor/mt/')))).catch(() => new Response('', { status: 504 })));
     return;
   }
   if (url.origin === self.location.origin) {
